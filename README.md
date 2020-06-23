@@ -1,2 +1,2 @@
 # Arduino-Vape
-Vape base don arduino and lcd5110 display
+Vape based on arduino and lcd5110 display
