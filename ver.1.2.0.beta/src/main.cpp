@@ -1,4 +1,4 @@
-//--------------------------------<Ver.1.1.9.stab>------------------------------------
+//--------------------------------<Ver.1.2.0.beta>------------------------------------
 //designed by ykronek
 //just fire on max power with battery volts on disp(work incorrectly)
 //28.07.2019
@@ -28,6 +28,8 @@
 //26.06.2020/01:47
 //исправил Debug mode
 //ардуино запоминает значение 'value' в EEPROM
+//20.09.2020/22:25
+//добавил фильтр для считывания напряжения
 
 #include<SPI.h>
 #include <avr/eeprom.h>
@@ -41,13 +43,15 @@
 
     // #define DEBUG //comment to disable
 
-#define VERSION "1.1.9"
-#define STABorBETA "stab"
+#define VERSION "1.2.0"
+#define STABorBETA "beta"
+#define LowerVbat   3.3
 //-----------------------------когда все собрали, меряем напряжение на 5вольтах ардуины и вписываем сюда
 #define VoltageTrue 5.187
 //-----------------------------итоговое сопротивление койлов
 #define coilRes 0.3
 //-----------------------------итоговое сопротивление койлов
+float k = 0.1;             // коефициент для фильтра считывания напряжения
 
 #define button1B A0  // пин кнопки button1(left)
 #define button2B A1   //(right)
@@ -84,6 +88,8 @@ boolean button3DP;  // флажки кнопок на двойное нажат�
 #define double_timer 100   // время (мс), отведённое на второе нажатие
 #define hold 500           // время (мс), после которого кнопка считается зажатой
 #define debounce 80        // (мс), антидребезг
+boolean lowbat;
+
 
 unsigned long button1_timer; // таймер последнего нажатия кнопки
 unsigned long button1_double; // таймер двойного нажатия кнопки
@@ -97,8 +103,8 @@ unsigned long button3_double; // таймер двойного нажатия к
 
 Adafruit_PCD8544 display = Adafruit_PCD8544(7, 13, 5, 4, 3);
 
-// int value = 200;
-double Vbat;
+
+double vbat;
 int value;
 float current;
 int power;
@@ -237,6 +243,15 @@ void buttons3() {
 }
 //------------------------ОТРАБОТКА КНОПОК-------------------------
 
+void dispinit(){
+
+  display.begin();
+  display.setContrast(50);
+  display.display();
+  display.clearDisplay();
+
+}
+
 void drawmainpageframes() {
   display.drawFastHLine(0, 0, 84, BLACK);//верхний
   display.drawFastHLine(0, 1, 84, BLACK);//top
@@ -257,9 +272,9 @@ void drawmainpageframes() {
   display.drawFastHLine(0, 26, 83, BLACK);//horizontal line
   display.drawFastHLine(0, 27, 83, BLACK);
 
-  display.drawFastVLine(35, 25, 26, BLACK);// разделяющая стенка
-  display.drawFastVLine(36, 25, 26, BLACK);//vertical line
-  display.drawFastVLine(37, 25, 26, BLACK);
+  display.drawFastVLine(45, 25, 26, BLACK);// разделяющая стенка
+  display.drawFastVLine(46, 25, 26, BLACK);//vertical line
+  display.drawFastVLine(47, 25, 26, BLACK);
 
   display.display();
 }
@@ -275,12 +290,19 @@ void drawmainpage(){
   display.setTextSize(1);
   display.print("val");
 
+  
+  if(lowbat){
+    display.setTextSize(1);
+    display.setCursor(3, 29);
+    display.print("lowBatt");
+  }else{
   display.setTextSize(1);
   display.setCursor(4, 29);
-  display.print(Vbat);
+  display.print(vbat);
   display.print("v");
+  }
 
-  display.setCursor(39, 29);
+  display.setCursor(49, 29);
   display.setTextSize(1);
   display.print(VERSION);
 
@@ -298,22 +320,28 @@ void drawmainpage(){
   display.print("w");
 }
 
+float expRunningAverage(float newVal) {
+  static float filVal = 0;
+  filVal += (newVal - filVal) * k;
+  return filVal;
+}
+
+
 void setup() {
   value = eeprom_read_word(0);
+  
   #ifdef DEBUG
   Serial.begin(9600);
   Serial.print("Debug mode, firmware version is ");
   Serial.print(VERSION);
+  Serial.print('.');
   Serial.println(STABorBETA);
   #endif
 
   pinMode(PowerDisplay,OUTPUT);
   digitalWrite(PowerDisplay,HIGH);
 
-  display.begin();
-  display.setContrast(50);
-  display.display();
-  display.clearDisplay();
+  dispinit();
 
   //analogReference(INTERNAL);
 
@@ -327,7 +355,13 @@ void setup() {
   analogWrite(MOSFET, 0);
 }
 
+
 void loop() {
+  if(vbat < LowerVbat){
+      lowbat = 1;
+  } else{
+    lowbat = 0;
+  }
 
   drawmainpageframes();
   drawmainpage();
@@ -427,20 +461,32 @@ void loop() {
    //---------------------------------------button3
 
 //----------------------------------------voltage 
-  Vbat = (analogRead(VBAT_SENS) * VoltageTrue) / 1024.0;
- current = Vbat/coilRes;
- power = current * Vbat * value / 255.0;
+ vbat = (analogRead(VBAT_SENS) * VoltageTrue) / 1024;
+ vbat = expRunningAverage(vbat);
+ current = vbat / coilRes;
+ power = current * vbat * value / 255;
 //----------------------------------------voltage
 
   if (fire == 1) {
+    if (!lowbat){
+      #ifdef DEBUG
+      Serial.println("power on coil is ON!");
+      #endif
+      analogWrite(MOSFET, value);
+    }else if(lowbat){
     #ifdef DEBUG
-    Serial.println("FIRE-button pressed");
+    Serial.print("FIRE-button pressed, power on coli is OFF!");
+    Serial.println(" Low Voltage");
+    
     #endif
-    analogWrite(MOSFET, value);
+    }
+  
   } else {
     analogWrite(MOSFET, 0);
   }
 
+
   eeprom_update_word(0, value);
 
 }
+
