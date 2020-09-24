@@ -48,12 +48,13 @@
 
 #define VERSION "1.2.1"
 #define STABorBETA "beta"
-#define LowerVbat   3.3      // нижний попрог допустимого напряжения для вейпа
+
 
 #define VoltageTrue 5.187    // когда все собрали, меряем напряжение на 5вольтах ардуины и вписываем сюда
-#define coilRes 0.3          // итоговое сопротивление койлов
 
 float k = 0.1;             // коефициент для фильтра считывания напряжения
+float coilRes = 0.3; // итоговое сопротивление койлов 
+float LowerVbat = 3.3;     // нижний попрог допустимого напряжения для вейпа
 
 #define button1B A0  // пин кнопки button1(left)
 #define button2B A1   //пин кнопки button2(right)
@@ -95,6 +96,8 @@ boolean lowbat;             // флаг разряда аккумулятора
 
 uint8_t page;
 bool page_select_cursor;
+uint8_t menuitem;
+bool is_selected;
 
 unsigned long button1_timer; // таймер последнего нажатия кнопки
 unsigned long button1_double; // таймер двойного нажатия кнопки
@@ -105,10 +108,11 @@ unsigned long button2_double; // таймер двойного нажатия к
 unsigned long button3_timer; // таймер последнего нажатия кнопки
 unsigned long button3_double; // таймер двойного нажатия кнопки
 
-uint32_t leftbtt_timer;    //таймеры для уменьшения валуе
-uint32_t rightbtt_timer;   //таймеры для увеличения валуе
+uint32_t leftbtt_timer;    //таймеры для уменьшения val
+uint32_t rightbtt_timer;   //таймеры для увеличения val
 uint32_t eprom_update_timer;
-
+uint32_t coilres_plus_timer;    //таймеры для уменьшения coilRes
+uint32_t coilres_minus_timer;   //таймеры для увеличения coilRes
 
 
 Adafruit_PCD8544 display = Adafruit_PCD8544(7, 13, 5, 4, 3);
@@ -252,6 +256,70 @@ void buttons3() {
 }
 //------------------------ОТРАБОТКА КНОПОК-------------------------
 
+void draw_settings_cursor(uint8_t menuitem, bool is_select){
+  switch (menuitem){
+    case 0:
+      if (is_select){
+        display.setTextSize(1);
+        display.setCursor(3, 4);
+        display.print(">");
+        
+      }else{
+        display.setTextSize(1);
+        display.setCursor(75, 4);
+        display.print("<");
+      }
+      break;
+    case 1:
+      if (is_select){
+        display.setTextSize(1);
+        display.setCursor(3, 12);
+        display.print(">");
+        
+      }else{
+        display.setTextSize(1);
+        display.setCursor(75, 12);
+        display.print("<");
+      }
+      break;
+    case 2:
+      if (is_select){
+        display.setTextSize(1);
+        display.setCursor(3, 20);
+        display.print(">");
+        
+      }else{
+        display.setTextSize(1);
+        display.setCursor(75, 20);
+        display.print("<");
+      }
+      break;
+    case 3:
+      if (is_select){
+        display.setTextSize(1);
+        display.setCursor(3, 28);
+        display.print(">");
+        
+      }else{
+        display.setTextSize(1);
+        display.setCursor(75, 28);
+        display.print("<");
+      }
+      break;
+    case 4:
+      if (is_select){
+        display.setTextSize(1);
+        display.setCursor(3, 36);
+        display.print(">");
+        
+      }else{
+        display.setTextSize(1);
+        display.setCursor(75, 36);
+        display.print("<");
+      }
+  }
+}
+
 void dispinit(){
   display.begin();
   display.setContrast(50);
@@ -260,7 +328,7 @@ void dispinit(){
 }
 
 void drawframes(){
-  display.clearDisplay();
+  
 
   display.drawFastHLine(0, 0, 84, BLACK);//верхний
   display.drawFastHLine(0, 1, 84, BLACK);//top
@@ -279,6 +347,7 @@ void drawframes(){
 }
 
 void drawmainpage(){
+  display.clearDisplay();
   drawframes();
 
   display.drawFastHLine(0, 25, 83, BLACK);// разделяющая горизонт
@@ -328,6 +397,7 @@ void drawmainpage(){
 }
 
 void draw_select(uint8_t y){
+  display.clearDisplay();
   drawframes();
 
   display.setCursor(18, 11);
@@ -349,12 +419,43 @@ void draw_select(uint8_t y){
 }
 
 void draw_info(){
+  display.clearDisplay();
   drawframes();
   display.setTextSize(1);
   display.setCursor(5, 5);
   display.print("Created by");
   display.setCursor(15, 15);
   display.print("ykronek");
+  display.setCursor(5, 37);
+  display.print("V.1.2.1.beta");
+  display.display();
+}
+
+void draw_settings(uint8_t menuitem, bool is_select){
+  display.clearDisplay();
+  drawframes();
+  display.setTextSize(1);
+  display.setCursor(9, 3);
+  display.print("coil:");
+  display.setCursor(45, 3);
+  display.print(coilRes);
+
+  display.setCursor(8, 11);
+  display.print("!batt:");
+  display.setCursor(45, 11);
+  display.print(LowerVbat);
+  
+   display.setCursor(9, 19);
+  display.print("'cmsoon'");
+
+   display.setCursor(9, 27);
+  display.print("'cmsoon'");
+
+   display.setCursor(9, 35);
+  display.print("'cmsoon'");
+  
+  draw_settings_cursor(menuitem, !is_select);
+
   display.display();
 }
 
@@ -373,8 +474,8 @@ boolean lowbat_state(float vbat){
 }
 
 void setup() {
-  page = 1;
-  page_select_cursor = 0;
+  page = 0;
+  menuitem = 0;
   val = eeprom_read_word(0);
   
   #ifdef DEBUG
@@ -399,6 +500,8 @@ void setup() {
 
 void loop() {
   lowbat = lowbat_state(vbat);
+  menuitem = constrain(menuitem, 0, 4);
+  coilRes = constrain(coilRes, 0, 1.5);
 
   switch (page){
     case 0:
@@ -409,6 +512,10 @@ void loop() {
       break;
     case 2:
       draw_info();
+      break;
+    case 3:
+      draw_settings(menuitem, is_selected);
+    default:
       break;
   }
 
@@ -435,8 +542,29 @@ void loop() {
         }
         break;
       case 1:
-      page_select_cursor = !page_select_cursor;
-      break;
+        page_select_cursor = !page_select_cursor;
+        break;
+      case 3:
+          if (!is_selected){
+          menuitem--;
+          }else
+          {
+            switch (menuitem)
+            {
+            case 0:
+              coilRes -= 0.01;
+              break;
+            case 1:
+              LowerVbat -= 0.05;
+              break;
+            
+            default:
+              break;
+            }
+          }
+        break;
+      default:
+        break;
     }
     button1P = 0;
     button1D = 0;
@@ -451,15 +579,34 @@ void loop() {
     #ifdef DEBUG
     Serial.println("LEFT-button hold");
     #endif
+    switch(page){
+      case 0:
+        if (millis() - leftbtt_timer > step_del){
+          leftbtt_timer = millis();
+          val--;  
+        }
+        if (val <= 0) {
+          val = 0;
+        }
+        break;
+      case 3:
+        switch (menuitem)
+      {
+      case 0:
+        if (millis() - coilres_minus_timer > step_del){
+          coilres_minus_timer = millis();
+          coilRes -= 0.01;  
+        }
+        break;
+      default:
+        break;
+      }
+      default:
+        break;
 
-    if (millis() - leftbtt_timer > step_del){
-    leftbtt_timer = millis();
-    val--;  
     }
 
-    if (val <= 0) {
-      val = 0;
-    }
+    
 
     button1H = 0;
   }
@@ -479,6 +626,29 @@ void loop() {
     case 1:
       page_select_cursor = !page_select_cursor;
       break;
+    case 3:
+    if (!is_selected){
+      menuitem++;
+      if (menuitem > 4){
+        menuitem = 0;
+      }
+    }else
+          {
+            switch (menuitem)
+            {
+            case 0:
+              coilRes += 0.01;
+              break;
+            case 1:
+              LowerVbat += 0.05;
+              break;
+            default:
+              break;
+            }
+          }
+      break;
+    default:
+      break;
     }
     button2P = 0;
     button2D = 0;
@@ -493,15 +663,34 @@ void loop() {
     #ifdef DEBUG
     Serial.println("RIGHT-button hold");
     #endif
-    
-    if (millis() - rightbtt_timer > step_del){
-    rightbtt_timer = millis();
-    val++;  
-    }
+    switch (page)
+    {
+    case 0:
+      if (millis() - rightbtt_timer > step_del){
+        rightbtt_timer = millis();
+        val++;  
+      }
 
-    if (val >= 255) {
+      if (val >= 255) {
       val = 255;
+      }
+      break;
+    case 3:
+      switch (menuitem)
+      {
+      case 0:
+        if (millis() - coilres_plus_timer > step_del){
+          coilres_plus_timer = millis();
+          coilRes += 0.01;  
+        }
+        break;
+      default:
+        break;
+      }
+    default:
+      break;
     }
+    
 
     button2H = 0;
   }
@@ -514,16 +703,17 @@ void loop() {
     switch (page){
       case 0:
         break;
+      case 3:
+        is_selected = !is_selected;
+        break;
       case 1:
-      switch (page_select_cursor){
-        case 0:
-
-          break;
-        case 1:
+        if(page_select_cursor){
           page = 2;
-          break;
+        } else if(!page_select_cursor){
+          page = 3;
+        }
+      
       }
-    }
     button3P = 0;
     button3D = 0;
   }
@@ -536,7 +726,13 @@ void loop() {
         page = 1;
         break;
       case 1:
-      page = 0;
+        page = 0;
+        break;
+      case 2:
+        page = 1;
+        break;
+      case 3:
+        page = 1;
         break;
     }
     button3HO = 0;
