@@ -755,7 +755,7 @@ void loop() {
 //----------------------------------------voltage
 
   if (fire == 1) {
-    if (!lowbat && page != 0){
+    if (!lowbat && page == 0){
       #ifdef DEBUG
       Serial.println("power on coil is ON!");
       #endif
